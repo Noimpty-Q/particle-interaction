@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>粒子交互 — 实时交互粒子系统</title>
-<meta name="description" content="基于 MediaPipe 手势识别与 Three.js / 原生 WebGL 的实时粒子交互作品集">
+<meta name="description" content="基于 MediaPipe 手势识别与 Three.js / GLSL 的实时粒子交互作品集">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2300e5ff' stroke-width='2.5'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%238b7cff' stroke-width='2' transform='rotate(-18 16 16)'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -241,8 +241,8 @@
     <h1>实时<span class="accent">交互</span>粒子系统</h1>
     <p class="lede">
       两个独立的浏览器实时渲染实验，探索同一件事：把摄像头的视觉输入变成可感知的空间交互。
-      摄像头画面经 MediaPipe 提取手部关键点，驱动 GPU 上的粒子场；另一件作品则完全不依赖
-      第三方库，从零手写 WebGL 程序化渲染管线。全部为纯前端实现，无服务端、无构建步骤，打开即用。
+      摄像头画面经 MediaPipe 提取手部关键点，驱动 GPU 上的粒子场；另一件作品用 Instanced
+      绘制单次提交 15 万粒子，纹理全部由 GLSL 程序化生成。全部为纯前端实现，无服务端、无构建步骤，打开即用。
     </p>
     <div class="stack">
       <span class="chip">MediaPipe</span>
@@ -274,12 +274,12 @@
       <div class="num">02 &nbsp;/&nbsp; SATURN SYSTEM</div>
       <h2>程序化土星系统渲染 <span class="go">→</span></h2>
       <p>
-        不依赖任何第三方库，从零手写 WebGL 渲染管线：土星本体、光环与卫星轨道全部由
-        Shader 程序化生成，噪声函数驱动大气与环带纹理，镜头按预设轨迹运镜。
+        基于 Three.js r160 的 Instanced 渲染管线：土星本体、光环与卫星轨道全部由
+        Shader 程序化生成，噪声函数驱动大气与环带纹理，单次 draw call 提交 15 万粒子。
       </p>
       <div class="tags">
-        <span class="badge">无依赖</span>
-        <span class="tag">原生 WebGL</span>
+        <span class="badge">零贴图</span>
+        <span class="tag">Three.js r160</span>
         <span class="tag">GLSL</span>
         <span class="tag">Instancing</span>
       </div>

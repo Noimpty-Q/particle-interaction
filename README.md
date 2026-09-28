@@ -13,7 +13,7 @@
 | # | 作品 | 粒子规模 | 输入模态 | 技术 |
 |---|------|---------|---------|------|
 | 01 | [手势驱动 3D 粒子场](particles.html) | 75,000 | 手部 21 关键点 | Three.js r128 + UnrealBloom 后处理 |
-| 02 | [程序化土星系统](saturn.html) | 150,000 | 无（自动运镜） | 原生 WebGL + GLSL，零第三方依赖 |
+| 02 | [程序化土星系统](saturn.html) | 150,000 | 无（自动运镜） | Three.js r160 · Instanced 绘制 · GLSL 程序化生成 |
 
 ### 01 手势驱动 3D 粒子场
 
@@ -24,10 +24,11 @@
 
 ### 02 程序化土星系统
 
-不使用任何图形库。从零构建 WebGL 管线：将低多边形 Quad 作为基础几何体，
-通过 Instanced 绘制一次性提交 150,000 个粒子；土星本体、环带与卫星轨道
-全部由 GLSL 中的 hash / noise 函数程序化生成，无外部贴图资源。镜头沿预设
-轨迹自动运镜。
+基于 Three.js r160 的 Instanced 渲染管线：以低多边形 Quad 为基础几何体，用
+`InstancedBufferGeometry` + 三个 `InstancedBufferAttribute` 承载每个粒子的位置、
+颜色与形变参数，**单次 draw call 提交 150,000 个粒子**。土星本体走 `SphereGeometry`
+配自定义 `ShaderMaterial`；环带与粒子云的纹理细节全部由 GLSL 中的 `hash` / `noise`
+函数程序化生成——**仓库内零贴图文件**，所有图案均由着色器实时计算。镜头沿预设轨迹自动运镜。
 
 <img src="saturn-preview.png" alt="程序化土星系统渲染效果" width="100%">
 
@@ -36,13 +37,14 @@
 ## 技术栈
 
 ```
-识别层    MediaPipe Hands · Camera Utils
-渲染层    Three.js r128 · 原生 WebGL · GLSL (hash / noise)
-后处理    EffectComposer · UnrealBloomPass · ShaderPass
-输入      Canvas 像素拾色 · 参数控制面板
+识别层    MediaPipe Hands · Camera Utils                  （作品 01）
+渲染层    Three.js r128（作品 01）· Three.js r160（作品 02）· GLSL
+绘制      InstancedBufferGeometry · 单次 draw call 15 万粒子
+后处理    EffectComposer · RenderPass · UnrealBloomPass · ShaderPass · FXAA
+输入      Canvas 像素拾色 · 参数控制面板 · 自动运镜
 ```
 
-依赖全部通过 CDN 加载（jsDelivr / cdnjs），仓库内不含任何构建产物或第三方源码。
+依赖全部通过 CDN 加载（jsDelivr / cdnjs / unpkg），仓库内不含任何构建产物或第三方源码。
 
 ---
 
@@ -116,7 +118,8 @@ git push -u origin main
 
 - **依赖 CDN** —— 断网或 CDN 不可达时页面无法渲染。若需完全离线运行，需将
   Three.js 与 MediaPipe 相关文件下载至本地并改写引用路径。
-- **需摄像头权限** —— 作品 01 未获得授权时仅显示空白粒子场，不提示错误。
+- **需摄像头权限** —— 作品 01 在未授权或模型加载失败时，右上角状态条会提示错误原因，
+  但粒子场本身仍会渲染（渲染循环与识别层解耦）。
 - **移动端表现未验证** —— 7.5 万粒子叠加泛光后处理对移动 GPU 压力较大，建议桌面端观看。
 - **首次加载较慢** —— MediaPipe 模型文件约 10 MB，首次进入需下载，之后走浏览器缓存。
 - **手势识别的角度敏感** —— 手部关键点在强逆光或手部贴近镜头时置信度下降明显。
