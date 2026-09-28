@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Saturn Project — 实时交互粒子系统</title>
-<meta name="description" content="基于 MediaPipe 手势识别与 Three.js 渲染的实时交互粒子系统作品集">
+<title>粒子交互 — 实时交互粒子系统</title>
+<meta name="description" content="基于 MediaPipe 手势识别与 Three.js / 原生 WebGL 的实时粒子交互作品集">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2300e5ff' stroke-width='2.5'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%238b7cff' stroke-width='2' transform='rotate(-18 16 16)'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -236,13 +236,13 @@
   <header>
     <div class="logo">
       <span class="logo-mark" aria-hidden="true"></span>
-      SATURN PROJECT
+      PARTICLE INTERACTION
     </div>
-    <h1>实时<span class="accent">手势交互</span>粒子系统</h1>
+    <h1>实时<span class="accent">交互</span>粒子系统</h1>
     <p class="lede">
-      三个独立的浏览器实时渲染实验，探索同一件事：把摄像头的视觉输入变成可感知的空间交互。
-      摄像头画面经 MediaPipe 提取手部与面部关键点，驱动 GPU 上的粒子场与程序化渲染管线。
-      全部为纯前端实现，无服务端、无构建步骤，打开即用。
+      两个独立的浏览器实时渲染实验，探索同一件事：把摄像头的视觉输入变成可感知的空间交互。
+      摄像头画面经 MediaPipe 提取手部关键点，驱动 GPU 上的粒子场；另一件作品则完全不依赖
+      第三方库，从零手写 WebGL 程序化渲染管线。全部为纯前端实现，无服务端、无构建步骤，打开即用。
     </p>
     <div class="stack">
       <span class="chip">MediaPipe</span>
@@ -270,23 +270,8 @@
       </div>
     </a>
 
-    <a class="card" href="holo.html">
-      <div class="num">02 &nbsp;/&nbsp; HOLO-NEXUS OS</div>
-      <h2>全息交互界面 <span class="go">→</span></h2>
-      <p>
-        同时接入手部与面部网格两路识别流，构建一套手势与表情双通道控制的全息 HUD。
-        含启动自检序列，识别状态与关键点置信度实时回传至界面层。
-      </p>
-      <div class="tags">
-        <span class="badge">需摄像头</span>
-        <span class="tag">MediaPipe Hands</span>
-        <span class="tag">MediaPipe FaceMesh</span>
-        <span class="tag">HUD</span>
-      </div>
-    </a>
-
     <a class="card" href="saturn.html">
-      <div class="num">03 &nbsp;/&nbsp; SATURN SYSTEM</div>
+      <div class="num">02 &nbsp;/&nbsp; SATURN SYSTEM</div>
       <h2>程序化土星系统渲染 <span class="go">→</span></h2>
       <p>
         不依赖任何第三方库，从零手写 WebGL 渲染管线：土星本体、光环与卫星轨道全部由
@@ -303,7 +288,7 @@
   </main>
 
   <div class="note">
-    <strong>关于摄像头权限</strong> — 作品 01、02 需要调用 <code>getUserMedia</code>。
+    <strong>关于摄像头权限</strong> — 作品 01 需要调用 <code>getUserMedia</code>。
     浏览器只在<strong>安全上下文</strong>（HTTPS 或 <code>localhost</code>）下开放摄像头，
     因此直接双击本地 HTML 文件（<code>file://</code>）会取不到画面。
     本地调试请起一个静态服务器，线上部署到 GitHub Pages 后为 HTTPS，可正常使用。
