@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saturn System - Procedural Cinematic Rendering</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.7); font-family: monospace; font-size: 14px;
+            letter-spacing: 2px; text-transform: uppercase; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Initialize Compute Shaders & Instancing Buffer...</div>
+    <div id="canvas-container"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+
+        class SaturnSystem {
+            constructor() {
+                this.initScene();
+                this.initPostProcessing();
+                this.buildPlanet();
+                this.buildRings();
+                this.setupLighting();
+                this.setupEvents();
+                
+                document.getElementById('loading').style.display = 'none';
+                this.clock = new THREE.Clock();
+                this.animate();
+            }
+
+            initScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x000000);
+                
+                // 电影级相机参数配置
+                this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(12, 4, 18);
+
+                this.renderer = new THREE.WebGLRenderer({ 
+                    powerPreference: "high-performance",
+                    antialias: false, // 禁用原生抗锯齿，交由 FXAA 处理
+                    stencil: false,
+                    depth: true
+                });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                // 物理光学属性配置
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1.2;
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.maxDistance = 100;
+                this.controls.minDistance = 3;
+            }
+
+            initPostProcessing() {
+                this.composer = new EffectComposer(this.renderer);
+                
+                const renderPass = new RenderPass(this.scene, this.camera);
+                this.composer.addPass(renderPass);
+
+                // Bloom 辉光模拟镜头光晕与高反照率区域
+                const bloomPass = new UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    0.8,  // strength
+                    0.6,  // radius
+                    0.85  // threshold
+                );
+                this.composer.addPass(bloomPass);
+
+                // FXAA 抗锯齿
+                this.fxaaPass = new ShaderPass(FXAAShader);
+                const pixelRatio = this.renderer.getPixelRatio();
+                this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+                this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+                this.composer.addPass(this.fxaaPass);
+            }
+
+            setupLighting() {
+                // 模拟遥远而高强度的太阳光 (采用高物理流明)
+                this.sunLight = new THREE.DirectionalLight(0xffffff, 8.0);
+                this.sunLight.position.set(50, 10, -20);
+                this.sunLight.castShadow = true;
+                
+                // 优化级联阴影贴图分辨率
+                this.sunLight.shadow.mapSize.width = 2048;
+                this.sunLight.shadow.mapSize.height = 2048;
+                this.sunLight.shadow.camera.near = 10;
+                this.sunLight.shadow.camera.far = 100;
+                const d = 15;
+                this.sunLight.shadow.camera.left = -d;
+                this.sunLight.shadow.camera.right = d;
+                this.sunLight.shadow.camera.top = d;
+                this.sunLight.shadow.camera.bottom = -d;
+                this.sunLight.shadow.bias = -0.001;
+
+                this.scene.add(this.sunLight);
+
+                // 极弱的星际环境光 (Ambient) 与反射星光
+                const ambientLight = new THREE.AmbientLight(0x1a2b3c, 0.05);
+                this.scene.add(ambientLight);
+            }
+
+            buildPlanet() {
+                // 构建符合真实扁率的土星本体 (赤道半径 > 极半径)
+                const geometry = new THREE.SphereGeometry(3, 128, 128);
+                // 物理数据缩放: 土星扁率约为 0.097
+                geometry.scale(1.0, 0.9, 1.0); 
+
+                // 纯过程化气态巨行星 Shader，含条带与极地六边形
+                this.planetMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        sunDirection: { value: new THREE.Vector3(50, 10, -20).normalize() }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        varying vec3 vNormal;
+                        varying vec3 vWorldPosition;
+                        void main() {
+                            vUv = uv;
+                            vNormal = normalize(normalMatrix * normal);
+                            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                            vWorldPosition = worldPos.xyz;
+                            gl_Position = projectionMatrix * viewMatrix * worldPos;
+                        }
+                    `,
+                    fragmentShader: `
+                        varying vec2 vUv;
+                        varying vec3 vNormal;
+                        varying vec3 vWorldPosition;
+                        uniform vec3 sunDirection;
+                        
+                        // 简单噪声函数用于湍流扰动
+                        float hash(float n) { return fract(sin(n) * 1e4); }
+                        float noise(vec2 x) {
+                            vec2 i = floor(x);
+                            vec2 f = fract(x);
+                            float a = hash(i.x + i.y * 57.0);
+                            float b = hash(i.x + 1.0 + i.y * 57.0);
+                            float c = hash(i.x + (i.y + 1.0) * 57.0);
+                            float d = hash(i.x + 1.0 + (i.y + 1.0) * 57.0);
+                            vec2 u = f * f * (3.0 - 2.0 * f);
+                            return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+                        }
+                        
+                        void main() {
+                            // 基础条带色谱计算 (基于纬度)
+                            float lat = vUv.y * 3.14159;
+                            float n = noise(vec2(vUv.x * 20.0, vUv.y * 50.0)) * 0.1;
+                            
+                            // 极地六边形扰动 (北极)
+                            if (vUv.y > 0.85) {
+                                float hex = sin(vUv.x * 3.14159 * 2.0 * 6.0);
+                                lat += hex * 0.05;
+                            }
+
+                            // 气态成分颜色混合 (氢/氦与微量化合物色系)
+                            vec3 colorBase = vec3(0.85, 0.76, 0.61);
+                            vec3 colorDark = vec3(0.65, 0.55, 0.42);
+                            vec3 colorLight = vec3(0.9, 0.85, 0.7);
+                            
+                            float band = sin(lat * 30.0 + n * 10.0) * 0.5 + 0.5;
+                            vec3 albedo = mix(colorBase, colorDark, band);
+                            albedo = mix(albedo, colorLight, sin(lat * 10.0)*0.5+0.5);
+
+                            // 基础光照模型 (半兰伯特)
+                            vec3 norm = normalize(vNormal);
+                            float ndotl = max(dot(norm, sunDirection), 0.0);
+                            vec3 diffuse = albedo * ndotl;
+                            
+                            // 边缘大气散射 (Fresnel)
+                            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+                            float rim = 1.0 - max(dot(viewDir, norm), 0.0);
+                            rim = smoothstep(0.6, 1.0, rim);
+                            vec3 atmosphere = vec3(0.5, 0.7, 0.9) * rim * ndotl * 0.5;
+
+                            gl_FragColor = vec4(diffuse + atmosphere, 1.0);
+                        }
+                    `
+                });
+
+                this.planet = new THREE.Mesh(geometry, this.planetMaterial);
+                this.planet.castShadow = true;
+                this.planet.receiveShadow = true;
+                
+                // 倾角：土星赤道面相对于轨道面的倾角约为 26.7 度
+                this.planet.rotation.z = THREE.MathUtils.degToRad(26.7);
+                this.scene.add(this.planet);
+            }
+
+            buildRings() {
+                // 150,000 粒子系统，平衡性能与视觉致密度
+                const particleCount = 150000;
+                
+                // 使用低多边形 Quad 作为 Instancing 的基础几何体
+                const baseGeometry = new THREE.PlaneGeometry(0.015, 0.015);
+                const instancedGeometry = new THREE.InstancedBufferGeometry();
+                instancedGeometry.index = baseGeometry.index;
+                instancedGeometry.attributes.position = baseGeometry.attributes.position;
+                instancedGeometry.attributes.uv = baseGeometry.attributes.uv;
+
+                // 定义实例属性数组
+                const aOrbitalData = new Float32Array(particleCount * 4); // x: radius, y: theta, z: eccentricity, w: speed
+                const aColorData = new Float32Array(particleCount * 3);   // rgb
+                const aSizeData = new Float32Array(particleCount);        // size scale
+
+                // 天体物理学分布函数：D ring -> C ring -> B ring -> Cassini -> A ring -> F ring
+                for (let i = 0; i < particleCount; i++) {
+                    let radius;
+                    let densityRegion = Math.random();
+                    
+                    // 基于天文观测的离散概率分布模型
+                    if (densityRegion < 0.1) {
+                        // C 环 (暗淡)
+                        radius = THREE.MathUtils.lerp(3.5, 4.5, Math.random());
+                    } else if (densityRegion < 0.6) {
+                        // B 环 (最明亮、最密)
+                        radius = THREE.MathUtils.lerp(4.5, 5.7, Math.random());
+                    } else if (densityRegion < 0.62) {
+                        // 卡西尼环缝 (Cassini Division) - 极少数粒子
+                        radius = THREE.MathUtils.lerp(5.7, 6.0, Math.random());
+                    } else if (densityRegion < 0.98) {
+                        // A 环 (中等亮度)
+                        radius = THREE.MathUtils.lerp(6.0, 6.7, Math.random());
+                        // Encke Gap 排除逻辑
+                        if (radius > 6.45 && radius < 6.5) radius += 0.05; 
+                    } else {
+                        // F 环及外围弥散微尘
+                        radius = THREE.MathUtils.lerp(6.8, 7.5, Math.random());
+                    }
+
+                    // 轨道角度
+                    const theta = Math.random() * Math.PI * 2;
+                    // 开普勒角速度计算 w = sqrt(G*M/r^3)， 此处作非线性近似
+                    const speed = (1.0 / Math.pow(radius, 1.5)) * 2.0;
+
+                    const i4 = i * 4;
+                    aOrbitalData[i4] = radius;
+                    aOrbitalData[i4 + 1] = theta;
+                    aOrbitalData[i4 + 2] = (Math.random() - 0.5) * 0.02; // 微弱的轨道离心率导致垂直波动
+                    aOrbitalData[i4 + 3] = speed;
+
+                    // 依据半径赋予不同的冰物质反照率色谱
+                    const color = new THREE.Color();
+                    if (radius < 4.5) color.setHSL(0.1, 0.2, 0.4);      // C 环：微红/暗
+                    else if (radius < 5.7) color.setHSL(0.12, 0.15, 0.8); // B 环：高反射冰
+                    else if (radius < 6.0) color.setHSL(0.1, 0.1, 0.2);   // 卡西尼：暗物质
+                    else color.setHSL(0.11, 0.1, 0.6);                    // A 环：微蓝/灰白
+                    
+                    // 局部噪点扰动
+                    color.multiplyScalar(0.8 + Math.random() * 0.4);
+
+                    const i3 = i * 3;
+                    aColorData[i3] = color.r;
+                    aColorData[i3 + 1] = color.g;
+                    aColorData[i3 + 2] = color.b;
+
+                    // 粒子大小多态性分布
+                    aSizeData[i] = Math.random() * 0.8 + 0.2;
+                }
+
+                instancedGeometry.setAttribute('aOrbitalData', new THREE.InstancedBufferAttribute(aOrbitalData, 4));
+                instancedGeometry.setAttribute('aColor', new THREE.InstancedBufferAttribute(aColorData, 3));
+                instancedGeometry.setAttribute('aSize', new THREE.InstancedBufferAttribute(aSizeData, 1));
+
+                // 星环专用物理着色器
+                this.ringMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        sunDirection: { value: new THREE.Vector3(50, 10, -20).normalize() },
+                        cameraPos: { value: this.camera.position }
+                    },
+                    vertexShader: `
+                        attribute vec4 aOrbitalData; // r, theta, y_offset, speed
+                        attribute vec3 aColor;
+                        attribute float aSize;
+                        
+                        uniform float uTime;
+                        
+                        varying vec3 vColor;
+                        varying vec3 vWorldPosition;
+                        
+                        void main() {
+                            vColor = aColor;
+                            
+                            // GPU 端解析开普勒动力学
+                            float radius = aOrbitalData.x;
+                            float theta = aOrbitalData.y + uTime * aOrbitalData.w;
+                            float yOffset = sin(theta * 2.0) * aOrbitalData.z; // 轨道摄动
+                            
+                            vec3 orbitPos = vec3(cos(theta) * radius, yOffset, sin(theta) * radius);
+                            
+                            // 将粒子锁定为面对相机的 Billboard 模式以支持各项异性反光
+                            vec3 viewVector = normalize(cameraPosition - orbitPos);
+                            vec3 upVector = vec3(0.0, 1.0, 0.0);
+                            vec3 rightVector = normalize(cross(upVector, viewVector));
+                            upVector = cross(viewVector, rightVector);
+                            
+                            vec3 localPos = position.x * rightVector * aSize + position.y * upVector * aSize;
+                            vec3 finalPos = orbitPos + localPos;
+
+                            vec4 worldPosition = modelMatrix * vec4(finalPos, 1.0);
+                            vWorldPosition = worldPosition.xyz;
+                            
+                            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform vec3 sunDirection;
+                        uniform vec3 cameraPos;
+                        
+                        varying vec3 vColor;
+                        varying vec3 vWorldPosition;
+                        
+                        void main() {
+                            // 圆形裁切
+                            vec2 coord = gl_PointCoord - vec2(0.5);
+                            if (length(coord) > 0.5) discard;
+                            
+                            // 模拟 Mie 散射的前向高反光 (Cassini 摄影机逆光光晕效应)
+                            vec3 viewDir = normalize(cameraPos - vWorldPosition);
+                            
+                            // 计算相位角 (Phase Angle)
+                            float phase = dot(viewDir, sunDirection);
+                            
+                            // 逆光向 (Forward Scattering) 提亮，顺光向 (Back Scattering) 保持正常反射
+                            float phaseEffect = max(0.0, phase);
+                            float scattering = pow(phaseEffect, 4.0) * 2.5 + 0.8; 
+                            
+                            // 最终辐照度计算
+                            vec3 finalColor = vColor * scattering;
+                            
+                            gl_FragColor = vec4(finalColor, 0.7); // 赋予冰粒半透明质感
+                        }
+                    `,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false // 禁用深度写入以实现密集体积叠加混合
+                });
+
+                this.rings = new THREE.Mesh(instancedGeometry, this.ringMaterial);
+                // 环带跟随行星系统的倾角同步旋转
+                this.rings.rotation.z = THREE.MathUtils.degToRad(26.7);
+                this.scene.add(this.rings);
+            }
+
+            setupEvents() {
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.composer.setSize(window.innerWidth, window.innerHeight);
+                    
+                    const pixelRatio = this.renderer.getPixelRatio();
+                    this.fxaaPass.material.uniforms['resolution'].value.x = 1 / (window.innerWidth * pixelRatio);
+                    this.fxaaPass.material.uniforms['resolution'].value.y = 1 / (window.innerHeight * pixelRatio);
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(this.animate.bind(this));
+                
+                const delta = this.clock.getDelta();
+                const elapsedTime = this.clock.getElapsedTime();
+
+                this.controls.update();
+
+                // 更新 GPU 着色器内部的动力学时间轴
+                if (this.planetMaterial) {
+                    this.planetMaterial.uniforms.uTime.value = elapsedTime;
+                }
+                if (this.ringMaterial) {
+                    this.ringMaterial.uniforms.uTime.value = elapsedTime;
+                    this.ringMaterial.uniforms.cameraPos.value.copy(this.camera.position);
+                }
+
+                // 缓慢自转的电影机位漫游
+                if (!this.controls.state) { // 当用户未进行交互操作时触发自动运镜
+                    this.camera.position.x = Math.cos(elapsedTime * 0.05) * 18;
+                    this.camera.position.z = Math.sin(elapsedTime * 0.05) * 18;
+                    this.camera.lookAt(0, 0, 0);
+                }
+
+                this.composer.render();
+            }
+        }
+
+        // 启动图形管线
+        new SaturnSystem();
+    </script>
+</body>
+</html>

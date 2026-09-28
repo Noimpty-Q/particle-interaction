@@ -1,0 +1,31 @@
+# ── 系统 ─────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── 编辑器 / IDE ─────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Python（本地起服务器时可能产生）──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# ── Node（若改用 npx serve 等工具）──
+node_modules/
+npm-debug.log*
+
+# ── 本地临时文件 ─────────────────────
+*.local
+*.log
+临时*
+备份*

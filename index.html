@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saturn Project — 实时交互粒子系统</title>
+<meta name="description" content="基于 MediaPipe 手势识别与 Three.js 渲染的实时交互粒子系统作品集">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2300e5ff' stroke-width='2.5'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%238b7cff' stroke-width='2' transform='rotate(-18 16 16)'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #05060a;
+    --panel: rgba(255, 255, 255, 0.028);
+    --panel-hover: rgba(255, 255, 255, 0.055);
+    --line: rgba(255, 255, 255, 0.09);
+    --line-hover: rgba(0, 229, 255, 0.45);
+    --ink: #e8ecf4;
+    --ink-2: #96a0b5;
+    --ink-3: #5d6779;
+    --cyan: #00e5ff;
+    --violet: #8b7cff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding: 0 24px 64px;
+    position: relative;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(900px 480px at 18% -8%, rgba(0, 229, 255, 0.10), transparent 62%),
+      radial-gradient(760px 420px at 88% 108%, rgba(139, 124, 255, 0.09), transparent 62%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; }
+
+  header { padding: 76px 0 52px; }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 34px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.24em;
+    color: var(--ink-2);
+  }
+  .logo-mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1.5px solid var(--cyan);
+    position: relative;
+    flex: none;
+    opacity: 0.9;
+  }
+  .logo-mark::after {
+    content: "";
+    position: absolute;
+    left: -7px;
+    right: -7px;
+    top: 50%;
+    height: 7px;
+    margin-top: -3.5px;
+    border-radius: 50%;
+    border: 1.5px solid var(--violet);
+    transform: rotate(-18deg);
+  }
+  h1 {
+    font-size: clamp(30px, 5.2vw, 46px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin: 0 0 16px;
+    line-height: 1.14;
+  }
+  h1 .accent {
+    background: linear-gradient(96deg, var(--cyan) 8%, var(--violet) 92%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .lede {
+    font-size: 15.5px;
+    line-height: 1.72;
+    color: var(--ink-2);
+    max-width: 660px;
+    margin: 0 0 26px;
+  }
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-size: 11.5px;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 13px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(298px, 1fr));
+    gap: 18px;
+  }
+  a.card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 24px 22px;
+    transition: background .22s ease, border-color .22s ease, transform .22s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  a.card:hover {
+    background: var(--panel-hover);
+    border-color: var(--line-hover);
+    transform: translateY(-3px);
+  }
+  a.card::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0;
+    transition: opacity .25s ease;
+  }
+  a.card:hover::after { opacity: 1; }
+
+  .num {
+    font-size: 11.5px;
+    letter-spacing: 0.16em;
+    color: var(--cyan);
+    font-weight: 600;
+    margin-bottom: 15px;
+    opacity: 0.85;
+  }
+  .card h2 {
+    font-size: 17.5px;
+    font-weight: 600;
+    margin: 0 0 9px;
+    letter-spacing: -0.012em;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .card h2 .go {
+    margin-left: auto;
+    color: var(--ink-3);
+    font-size: 15px;
+    transition: transform .22s ease, color .22s ease;
+  }
+  a.card:hover h2 .go { transform: translateX(4px); color: var(--cyan); }
+  .card p {
+    font-size: 13.5px;
+    line-height: 1.68;
+    color: var(--ink-2);
+    margin: 0 0 17px;
+  }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 10.5px;
+    letter-spacing: 0.035em;
+    color: var(--ink-3);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 3px 8px;
+  }
+  .badge {
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    border: 1px solid rgba(0, 229, 255, 0.32);
+    background: rgba(0, 229, 255, 0.07);
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-weight: 600;
+  }
+
+  .note {
+    margin-top: 42px;
+    border-top: 1px solid var(--line);
+    padding-top: 24px;
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--ink-3);
+  }
+  .note strong { color: var(--ink-2); font-weight: 500; }
+  .note code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5px 6px;
+    color: var(--ink-2);
+  }
+  footer {
+    position: relative;
+    z-index: 1;
+    max-width: 1080px;
+    margin: 46px auto 0;
+    font-size: 12px;
+    color: var(--ink-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+  footer a { color: var(--ink-3); text-decoration: none; border-bottom: 1px solid var(--line); }
+  footer a:hover { color: var(--cyan); border-color: var(--cyan); }
+  @media (max-width: 640px) {
+    body { padding: 0 18px 48px; }
+    header { padding: 48px 0 36px; }
+    .logo { font-size: 11px; letter-spacing: 0.18em; margin-bottom: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <span class="logo-mark" aria-hidden="true"></span>
+      SATURN PROJECT
+    </div>
+    <h1>实时<span class="accent">手势交互</span>粒子系统</h1>
+    <p class="lede">
+      三个独立的浏览器实时渲染实验，探索同一件事：把摄像头的视觉输入变成可感知的空间交互。
+      摄像头画面经 MediaPipe 提取手部与面部关键点，驱动 GPU 上的粒子场与程序化渲染管线。
+      全部为纯前端实现，无服务端、无构建步骤，打开即用。
+    </p>
+    <div class="stack">
+      <span class="chip">MediaPipe</span>
+      <span class="chip">Three.js</span>
+      <span class="chip">WebGL Shader</span>
+      <span class="chip">Post-processing</span>
+      <span class="chip">Zero build</span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <a class="card" href="particles.html">
+      <div class="num">01 &nbsp;/&nbsp; GESTURE PARTICLES</div>
+      <h2>手势驱动 3D 粒子场 <span class="go">→</span></h2>
+      <p>
+        前置摄像头捕捉手部 21 个关键点，实时映射为粒子场的引力中心与形态切换开关。
+        粒子在 UnrealBloom 泛光后处理下渲染，支持吸管工具从屏幕任意位置拾取粒子配色。
+      </p>
+      <div class="tags">
+        <span class="badge">需摄像头</span>
+        <span class="tag">MediaPipe Hands</span>
+        <span class="tag">Three.js r128</span>
+        <span class="tag">UnrealBloomPass</span>
+      </div>
+    </a>
+
+    <a class="card" href="holo.html">
+      <div class="num">02 &nbsp;/&nbsp; HOLO-NEXUS OS</div>
+      <h2>全息交互界面 <span class="go">→</span></h2>
+      <p>
+        同时接入手部与面部网格两路识别流，构建一套手势与表情双通道控制的全息 HUD。
+        含启动自检序列，识别状态与关键点置信度实时回传至界面层。
+      </p>
+      <div class="tags">
+        <span class="badge">需摄像头</span>
+        <span class="tag">MediaPipe Hands</span>
+        <span class="tag">MediaPipe FaceMesh</span>
+        <span class="tag">HUD</span>
+      </div>
+    </a>
+
+    <a class="card" href="saturn.html">
+      <div class="num">03 &nbsp;/&nbsp; SATURN SYSTEM</div>
+      <h2>程序化土星系统渲染 <span class="go">→</span></h2>
+      <p>
+        不依赖任何第三方库，从零手写 WebGL 渲染管线：土星本体、光环与卫星轨道全部由
+        Shader 程序化生成，噪声函数驱动大气与环带纹理，镜头按预设轨迹运镜。
+      </p>
+      <div class="tags">
+        <span class="badge">无依赖</span>
+        <span class="tag">原生 WebGL</span>
+        <span class="tag">GLSL</span>
+        <span class="tag">Instancing</span>
+      </div>
+    </a>
+
+  </main>
+
+  <div class="note">
+    <strong>关于摄像头权限</strong> — 作品 01、02 需要调用 <code>getUserMedia</code>。
+    浏览器只在<strong>安全上下文</strong>（HTTPS 或 <code>localhost</code>）下开放摄像头，
+    因此直接双击本地 HTML 文件（<code>file://</code>）会取不到画面。
+    本地调试请起一个静态服务器，线上部署到 GitHub Pages 后为 HTTPS，可正常使用。
+  </div>
+
+</div>
+
+<footer>
+  <span>Built with MediaPipe &amp; Three.js</span>
+  <span>·</span>
+  <a href="https://github.com/Noimpty-Q" id="repo-link">GitHub</a>
+</footer>
+
+</body>
+</html>

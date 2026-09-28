@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holo-Nexus OS | AI 全息交互系统</title>
+    
+    <style>
+        :root {
+            --primary: #00ffcc;
+            --secondary: #bd00ff;
+            --bg: #030508;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--primary);
+            user-select: none;
+        }
+        #webgl-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        
+        /* 未来感 HUD 界面 */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 10;
+            pointer-events: none;
+            box-sizing: border-box;
+            border: 2px solid rgba(0, 255, 204, 0.1);
+            background: 
+                linear-gradient(rgba(0, 255, 204, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 204, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        
+        .scanline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 10px;
+            background: linear-gradient(to bottom, transparent, rgba(0, 255, 204, 0.5), transparent);
+            animation: scan 6s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: -10%; }
+            100% { top: 110%; }
+        }
+
+        .hud-corner {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-color: var(--primary);
+            border-style: solid;
+            opacity: 0.7;
+        }
+        .tl { top: 20px; left: 20px; border-width: 2px 0 0 2px; }
+        .tr { top: 20px; right: 20px; border-width: 2px 2px 0 0; }
+        .bl { bottom: 20px; left: 20px; border-width: 0 0 2px 2px; }
+        .br { bottom: 20px; right: 20px; border-width: 0 2px 2px 0; }
+
+        .system-info {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            font-size: 12px;
+            text-shadow: 0 0 5px var(--primary);
+            line-height: 1.5;
+        }
+
+        /* 启动屏幕 */
+        #boot-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(3, 5, 8, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1s ease-out;
+        }
+        #boot-btn {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 15px 40px;
+            font-size: 18px;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2) inset;
+            transition: all 0.3s;
+            pointer-events: auto;
+        }
+        #boot-btn:hover {
+            background: rgba(0, 255, 204, 0.2);
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.6) inset, 0 0 20px rgba(0, 255, 204, 0.4);
+            text-shadow: 0 0 10px var(--primary);
+        }
+        .boot-text {
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.8;
+            letter-spacing: 2px;
+        }
+
+        /* Debug 视频流（隐藏）*/
+        .input_video {
+            display: none;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.js"
+            }
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="webgl-container"></div>
+
+    <video class="input_video" autoplay playsinline></video>
+
+    <div id="hud">
+        <div class="scanline"></div>
+        <div class="hud-corner tl"></div>
+        <div class="hud-corner tr"></div>
+        <div class="hud-corner bl"></div>
+        <div class="hud-corner br"></div>
+        
+        <div class="system-info" id="sys-info">
+            HOLO-NEXUS OS v3.0<br>
+            INITIALIZING NEURAL LINK...<br>
+            AWAITING SENSORY INPUT
+        </div>
+    </div>
+
+    <div id="boot-screen">
+        <div class="boot-text">
+            <h2>HOLO-NEXUS OS</h2>
+            <p>WARNING: HIGH ENERGY PARTICLE FIELD<br>REQUIRE CAMERA & MICROPHONE ACCESS</p>
+        </div>
+        <button id="boot-btn">INITIALIZE SYSTEM</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import GUI from 'lil-gui';
+
+        // ==========================================
+        // 核心配置与全局状态
+        // ==========================================
+        const CONFIG = {
+            particleCount: 150000,
+            baseSize: 3.0,
+            bloomStrength: 1.8,
+            bloomRadius: 0.5,
+            bloomThreshold: 0.1,
+            noiseSpeed: 0.2,
+            noiseScale: 1.5,
+            color1: '#00ffcc', // 霓虹青
+            color2: '#bd00ff', // 电流紫
+            audioSensitivity: 1.0,
+            handRepulsion: 5.0,
+            friction: 0.92
+        };
+
+        const STATE = {
+            facePos: new THREE.Vector3(0, 0, 0),
+            leftHandPos: new THREE.Vector3(-999, -999, 0),
+            rightHandPos: new THREE.Vector3(999, -999, 0),
+            leftHandGesture: 0.0, // 1 = 张开 (排斥), -1 = 握拳 (吸引)
+            rightHandGesture: 0.0,
+            audioIntensity: 0.0
+        };
+
+        // 平滑插值目标 (Lerp Targets)
+        const TARGETS = {
+            facePos: new THREE.Vector3(0, 0, 0),
+            leftHandPos: new THREE.Vector3(-999, -999, 0),
+            rightHandPos: new THREE.Vector3(999, -999, 0),
+            leftHandGesture: 0.0,
+            rightHandGesture: 0.0
+        };
+
+        // ==========================================
+        // GLSL Shaders (GPU 粒子动力学核心)
+        // ==========================================
+        
+        // 包含经典的高级 Curl Noise 算法以实现流体力学感
+        const vertexShader = `
+            uniform float uTime;
+            uniform vec3 uFacePos;
+            uniform vec3 uLeftHand;
+            uniform vec3 uRightHand;
+            uniform float uLeftGesture;
+            uniform float uRightGesture;
+            uniform float uAudio;
+            uniform float uNoiseSpeed;
+            uniform float uNoiseScale;
+            uniform float uBaseSize;
+
+            attribute float aSize;
+            attribute vec3 aRandom;
+
+            varying vec2 vUv;
+            varying float vDistanceToCenter;
+            varying float vAudioReact;
+
+            // 3D Simplex Noise 
+            vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
+            vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+            float snoise(vec3 v){ 
+                const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+                const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+                vec3 i  = floor(v + dot(v, C.yyy) );
+                vec3 x0 = v - i + dot(i, C.xxx) ;
+                vec3 g = step(x0.yzx, x0.xyz);
+                vec3 l = 1.0 - g;
+                vec3 i1 = min( g.xyz, l.zxy );
+                vec3 i2 = max( g.xyz, l.zxy );
+                vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+                vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+                vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
+                i = mod(i, 289.0 ); 
+                vec4 p = permute( permute( permute( 
+                            i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                        + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+                        + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+                float n_ = 1.0/7.0;
+                vec3  ns = n_ * D.wyz - D.xzx;
+                vec4 j = p - 49.0 * floor(p * ns.z *ns.z);
+                vec4 x_ = floor(j * ns.z);
+                vec4 y_ = floor(j - 7.0 * x_ );
+                vec4 x = x_ *ns.x + ns.yyyy;
+                vec4 y = y_ *ns.x + ns.yyyy;
+                vec4 h = 1.0 - abs(x) - abs(y);
+                vec4 b0 = vec4( x.xy, y.xy );
+                vec4 b1 = vec4( x.zw, y.zw );
+                vec4 s0 = floor(b0)*2.0 + 1.0;
+                vec4 s1 = floor(b1)*2.0 + 1.0;
+                vec4 sh = -step(h, vec4(0.0));
+                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+                vec3 p0 = vec3(a0.xy,h.x);
+                vec3 p1 = vec3(a0.zw,h.y);
+                vec3 p2 = vec3(a1.xy,h.z);
+                vec3 p3 = vec3(a1.zw,h.w);
+                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+                p0 *= norm.x;
+                p1 *= norm.y;
+                p2 *= norm.z;
+                p3 *= norm.w;
+                return 42.0 * dot( vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)), vec4(1.0) );
+            }
+
+            vec3 curlNoise(vec3 p) {
+                float e = 0.1;
+                vec3 dx = vec3(e, 0.0, 0.0);
+                vec3 dy = vec3(0.0, e, 0.0);
+                vec3 dz = vec3(0.0, 0.0, e);
+
+                vec3 p_x0 = vec3(snoise(p - dx), snoise(p - dx + vec3(12.34, 56.78, 90.12)), snoise(p - dx + vec3(34.56, 78.90, 12.34)));
+                vec3 p_x1 = vec3(snoise(p + dx), snoise(p + dx + vec3(12.34, 56.78, 90.12)), snoise(p + dx + vec3(34.56, 78.90, 12.34)));
+                vec3 p_y0 = vec3(snoise(p - dy), snoise(p - dy + vec3(12.34, 56.78, 90.12)), snoise(p - dy + vec3(34.56, 78.90, 12.34)));
+                vec3 p_y1 = vec3(snoise(p + dy), snoise(p + dy + vec3(12.34, 56.78, 90.12)), snoise(p + dy + vec3(34.56, 78.90, 12.34)));
+                vec3 p_z0 = vec3(snoise(p - dz), snoise(p - dz + vec3(12.34, 56.78, 90.12)), snoise(p - dz + vec3(34.56, 78.90, 12.34)));
+                vec3 p_z1 = vec3(snoise(p + dz), snoise(p + dz + vec3(12.34, 56.78, 90.12)), snoise(p + dz + vec3(34.56, 78.90, 12.34)));
+
+                float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;
+                float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;
+                float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;
+
+                return normalize(vec3(x, y, z) / (2.0 * e));
+            }
+
+            void main() {
+                vUv = uv;
+                
+                // 基础位置
+                vec3 pos = position;
+
+                // 1. 核心流动物理 (Curl Noise 扰动)
+                vec3 noisePos = pos * uNoiseScale + uTime * uNoiseSpeed;
+                vec3 curl = curlNoise(noisePos) * 2.5;
+                pos += curl * (1.0 + uAudio * 2.0); // 音频强化扰动
+
+                // 2. 面部引力系统 (星系环绕)
+                vec3 faceDir = uFacePos - pos;
+                float faceDist = length(faceDir);
+                if(faceDist < 15.0) {
+                    vec3 tangent = cross(normalize(faceDir), vec3(0.0, 1.0, 0.0));
+                    pos += tangent * (15.0 - faceDist) * 0.1; // 轨道旋转
+                    pos += normalize(faceDir) * (15.0 - faceDist) * 0.05; // 轻微向心吸附
+                }
+
+                // 3. 手部互动物理系统 (推斥/坍缩)
+                // 左手
+                vec3 lHandDir = pos - uLeftHand;
+                float lHandDist = length(lHandDir);
+                if(lHandDist < 10.0) {
+                    // uLeftGesture: 1.0 = 张开(冲击波), -1.0 = 握拳(黑洞)
+                    float force = (10.0 - lHandDist) * uLeftGesture * 0.3;
+                    pos += normalize(lHandDir) * force;
+                }
+                
+                // 右手
+                vec3 rHandDir = pos - uRightHand;
+                float rHandDist = length(rHandDir);
+                if(rHandDist < 10.0) {
+                    float force = (10.0 - rHandDist) * uRightGesture * 0.3;
+                    pos += normalize(rHandDir) * force;
+                }
+
+                // 4. 音频脉冲膨胀
+                pos += normalize(pos) * uAudio * 1.5 * aRandom.x;
+
+                vDistanceToCenter = length(pos);
+                vAudioReact = uAudio;
+
+                vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                
+                // 相机距离衰减 + 基础尺寸 + 音频放大
+                gl_PointSize = uBaseSize * aSize * (30.0 / -mvPosition.z) * (1.0 + uAudio * 2.0);
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const fragmentShader = `
+            uniform vec3 uColor1;
+            uniform vec3 uColor2;
+            uniform float uTime;
+
+            varying float vDistanceToCenter;
+            varying float vAudioReact;
+
+            void main() {
+                // 绘制柔和的发光圆形粒子
+                vec2 center = gl_PointCoord - vec2(0.5);
+                float dist = length(center);
+                
+                if (dist > 0.5) discard; // 切割成圆
+
+                // 中心亮，边缘暗的径向渐变
+                float alpha = (0.5 - dist) * 2.0;
+                alpha = pow(alpha, 1.5); // 增加对比度，让辉光更自然
+
+                // 根据粒子在空间的位置混合全息颜色
+                float colorMix = sin(vDistanceToCenter * 0.1 - uTime) * 0.5 + 0.5;
+                vec3 finalColor = mix(uColor1, uColor2, colorMix);
+
+                // 音量高时中心泛白
+                finalColor = mix(finalColor, vec3(1.0), vAudioReact * 0.5 * alpha);
+
+                gl_FragColor = vec4(finalColor, alpha * 0.8);
+            }
+        `;
+
+        // ==========================================
+        // Three.js 核心渲染系统
+        // ==========================================
+        const container = document.getElementById('webgl-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x030508, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 25;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 性能优化
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x030508);
+        container.appendChild(renderer.domElement);
+
+        // 后处理 (电影级 Bloom)
+        const renderScene = new RenderPass(scene, camera);
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            CONFIG.bloomStrength,
+            CONFIG.bloomRadius,
+            CONFIG.bloomThreshold
+        );
+        const outputPass = new OutputPass();
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+        composer.addPass(outputPass);
+
+        // ==========================================
+        // 粒子几何体生成
+        // ==========================================
+        let particleSystem;
+        let shaderMaterial;
+
+        function initParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(CONFIG.particleCount * 3);
+            const sizes = new Float32Array(CONFIG.particleCount);
+            const randoms = new Float32Array(CONFIG.particleCount * 3);
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                // 在球体范围内随机生成初始粒子
+                const r = 15 * Math.cbrt(Math.random());
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                positions[i * 3 + 2] = r * Math.cos(phi);
+
+                sizes[i] = Math.random() * 0.8 + 0.2;
+
+                randoms[i * 3] = Math.random();
+                randoms[i * 3 + 1] = Math.random();
+                randoms[i * 3 + 2] = Math.random();
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 3));
+
+            shaderMaterial = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: {
+                    uTime: { value: 0 },
+                    uFacePos: { value: STATE.facePos },
+                    uLeftHand: { value: STATE.leftHandPos },
+                    uRightHand: { value: STATE.rightHandPos },
+                    uLeftGesture: { value: STATE.leftHandGesture },
+                    uRightGesture: { value: STATE.rightHandGesture },
+                    uAudio: { value: STATE.audioIntensity },
+                    uBaseSize: { value: CONFIG.baseSize },
+                    uNoiseSpeed: { value: CONFIG.noiseSpeed },
+                    uNoiseScale: { value: CONFIG.noiseScale },
+                    uColor1: { value: new THREE.Color(CONFIG.color1) },
+                    uColor2: { value: new THREE.Color(CONFIG.color2) }
+                },
+                transparent: true,
+                blending: THREE.AdditiveBlending, // 加色混合，实现能量发光感
+                depthWrite: false
+            });
+
+            particleSystem = new THREE.Points(geometry, shaderMaterial);
+            scene.add(particleSystem);
+        }
+
+        initParticles();
+
+        // ==========================================
+        // UI 控制面板 (lil-gui)
+        // ==========================================
+        const gui = new GUI({ title: 'HOLO-NEXUS CORE SETTINGS' });
+        const visualFolder = gui.addFolder('Visual Engine');
+        visualFolder.add(CONFIG, 'baseSize', 1.0, 10.0).onChange(v => shaderMaterial.uniforms.uBaseSize.value = v);
+        visualFolder.add(CONFIG, 'bloomStrength', 0.0, 3.0).onChange(v => bloomPass.strength = v);
+        visualFolder.addColor(CONFIG, 'color1').onChange(v => shaderMaterial.uniforms.uColor1.value.set(v));
+        visualFolder.addColor(CONFIG, 'color2').onChange(v => shaderMaterial.uniforms.uColor2.value.set(v));
+        
+        const physicsFolder = gui.addFolder('Quantum Physics');
+        physicsFolder.add(CONFIG, 'noiseSpeed', 0.0, 1.0).onChange(v => shaderMaterial.uniforms.uNoiseSpeed.value = v);
+        physicsFolder.add(CONFIG, 'noiseScale', 0.1, 5.0).onChange(v => shaderMaterial.uniforms.uNoiseScale.value = v);
+        physicsFolder.close();
+
+        // ==========================================
+        // MediaPipe 多模态跟踪系统
+        // ==========================================
+        const videoElement = document.querySelector('.input_video');
+        let cameraStream = null;
+
+        // 坐标映射：将 MediaPipe 归一化坐标 [0,1] 映射到 Three.js 3D 空间
+        function mapTo3D(landmark, depthScale = 20) {
+            return new THREE.Vector3(
+                (landmark.x - 0.5) * 35,    // 镜像并在 X 轴放大
+                -(landmark.y - 0.5) * 25,   // Y 轴反转
+                -landmark.z * depthScale    // Z 轴深度
+            );
+        }
+
+        // 判断手势状态: 计算指尖到手掌根部的平均距离
+        function getGestureState(landmarks) {
+            const wrist = landmarks[0];
+            const tips = [landmarks[8], landmarks[12], landmarks[16], landmarks[20]]; // 食指、中指、无名指、小指
+            let avgDist = 0;
+            tips.forEach(tip => {
+                avgDist += Math.sqrt(Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2));
+            });
+            avgDist /= 4;
+            
+            // 距离大说明手张开 (返回 1.0 产生冲击波)，距离小说明握拳 (返回 -1.0 产生黑洞)
+            if (avgDist > 0.4) return 1.0;
+            if (avgDist < 0.2) return -1.0;
+            return 0.0; // 平静游离状态
+        }
+
+        // 初始化 Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+        hands.onResults((results) => {
+            // 预设离屏状态
+            TARGETS.leftHandPos.set(-999, -999, 0);
+            TARGETS.rightHandPos.set(999, -999, 0);
+            TARGETS.leftHandGesture = 0.0;
+            TARGETS.rightHandGesture = 0.0;
+
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                results.multiHandLandmarks.forEach((landmarks, index) => {
+                    const isRight = results.multiHandedness[index].label === 'Left'; // 镜像翻转处理
+                    const centerPoint = landmarks[9]; // 中指根部作为手部中心
+                    const mappedPos = mapTo3D(centerPoint, 30);
+                    const gesture = getGestureState(landmarks);
+
+                    if (isRight) {
+                        TARGETS.rightHandPos.copy(mappedPos);
+                        TARGETS.rightHandGesture = gesture;
+                    } else {
+                        TARGETS.leftHandPos.copy(mappedPos);
+                        TARGETS.leftHandGesture = gesture;
+                    }
+                });
+            }
+        });
+
+        // 初始化 FaceMesh
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: false,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+        faceMesh.onResults((results) => {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                const nosePoint = landmarks[1]; // 鼻尖
+                TARGETS.facePos.copy(mapTo3D(nosePoint, 10));
+            } else {
+                TARGETS.facePos.set(0, 0, -999); // 没人脸时移出屏幕
+            }
+        });
+
+        // ==========================================
+        // Web Audio API 系统
+        // ==========================================
+        let audioContext, analyser, dataArray;
+
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+            } catch (err) {
+                console.warn('音频接入失败或被拒绝:', err);
+                document.getElementById('sys-info').innerHTML += "<br><span style='color:red'>AUDIO LINK FAILED. RUNNING IN SILENT MODE.</span>";
+            }
+        }
+
+        function updateAudio() {
+            if (!analyser) return;
+            analyser.getByteFrequencyData(dataArray);
+            
+            // 提取低频部分计算打击感/音量
+            let sum = 0;
+            for(let i = 0; i < 10; i++) {
+                sum += dataArray[i];
+            }
+            let avg = sum / 10.0;
+            // 归一化并平滑
+            let targetAudio = (avg / 255.0) * CONFIG.audioSensitivity;
+            
+            // 快速上升，缓慢下降的阻尼处理
+            STATE.audioIntensity = STATE.audioIntensity * 0.8 + targetAudio * 0.2;
+        }
+
+        // ==========================================
+        // 主启动流程
+        // ==========================================
+        document.getElementById('boot-btn').addEventListener('click', async () => {
+            const bootScreen = document.getElementById('boot-screen');
+            bootScreen.querySelector('.boot-text').innerHTML = "<h2>INITIATING...</h2><p>Establishing quantum neural links...</p>";
+            
+            try {
+                // 1. 请求摄像头
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480, facingMode: "user" } 
+                });
+                videoElement.srcObject = cameraStream;
+                
+                // 2. 启动 MediaPipe 处理循环
+                const cameraUtils = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await hands.send({ image: videoElement });
+                        await faceMesh.send({ image: videoElement });
+                    },
+                    width: 640,
+                    height: 480
+                });
+                cameraUtils.start();
+
+                // 3. 请求麦克风
+                await initAudio();
+
+                // 4. 隐藏启动屏幕，更新 HUD
+                bootScreen.style.opacity = '0';
+                setTimeout(() => bootScreen.style.display = 'none', 1000);
+                
+                setInterval(() => {
+                    document.getElementById('sys-info').innerHTML = `
+                        HOLO-NEXUS OS v3.0<br>
+                        FPS: ${Math.round(1000/deltaTime)}<br>
+                        ENTITIES: ${CONFIG.particleCount}<br>
+                        NEURAL SYNC: ONLINE<br>
+                        AUDIO REACT: ${analyser ? 'ACTIVE' : 'OFFLINE'}
+                    `;
+                }, 500);
+
+            } catch (error) {
+                console.error("启动失败:", error);
+                bootScreen.querySelector('.boot-text').innerHTML = `<h2 style="color:red">ERROR</h2><p>Permission denied or hardware not found.<br>Must run on Localhost/HTTPS.</p>`;
+            }
+        });
+
+
+        // ==========================================
+        // 渲染与插值循环 (Animation Loop)
+        // ==========================================
+        const clock = new THREE.Clock();
+        let lastTime = 0;
+        let deltaTime = 16;
+
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            deltaTime = time - lastTime;
+            lastTime = time;
+
+            const t = clock.getElapsedTime();
+
+            // 1. 音频更新
+            updateAudio();
+
+            // 2. 物理插值 (Lerping) - 保证交互极致丝滑，毫无延迟抖动感
+            STATE.facePos.lerp(TARGETS.facePos, 0.1);
+            STATE.leftHandPos.lerp(TARGETS.leftHandPos, 0.15);
+            STATE.rightHandPos.lerp(TARGETS.rightHandPos, 0.15);
+            
+            // 手势状态插值 (制造能量蓄力缓冲感)
+            STATE.leftHandGesture += (TARGETS.leftHandGesture - STATE.leftHandGesture) * 0.1;
+            STATE.rightHandGesture += (TARGETS.rightHandGesture - STATE.rightHandGesture) * 0.1;
+
+            // 3. 更新 Shader Uniforms
+            if (shaderMaterial) {
+                shaderMaterial.uniforms.uTime.value = t;
+                shaderMaterial.uniforms.uFacePos.value = STATE.facePos;
+                shaderMaterial.uniforms.uLeftHand.value = STATE.leftHandPos;
+                shaderMaterial.uniforms.uRightHand.value = STATE.rightHandPos;
+                shaderMaterial.uniforms.uLeftGesture.value = STATE.leftHandGesture;
+                shaderMaterial.uniforms.uRightGesture.value = STATE.rightHandGesture;
+                shaderMaterial.uniforms.uAudio.value = STATE.audioIntensity;
+            }
+
+            // 4. 镜头轻微漂移呼吸感
+            camera.position.x = Math.sin(t * 0.5) * 1.0;
+            camera.position.y = Math.cos(t * 0.3) * 1.0;
+            camera.lookAt(scene.position);
+
+            // 5. 渲染后处理链
+            composer.render();
+        }
+
+        animate(0);
+
+        // ==========================================
+        // 窗口自适应与全屏
+        // ==========================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 快捷键支持
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'f' || e.key === 'F') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
