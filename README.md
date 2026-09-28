@@ -4,7 +4,7 @@
 
 把摄像头的视觉输入变成可感知的空间交互 —— 两个纯前端实时渲染实验，无服务端、无构建步骤。
 
-**[→ 在线演示](https://Noimpty-Q.github.io/粒子交互/)** &nbsp;·&nbsp; 建议用桌面版 Chrome / Edge 打开
+**[→ 在线演示](https://Noimpty-Q.github.io/particle-interaction/)** &nbsp;·&nbsp; 建议用桌面版 Chrome / Edge 打开
 
 ---
 
@@ -82,12 +82,12 @@ git init -b main
 git add .
 git status          # 确认没有多余文件被加进来
 git commit -m "Add interactive particle system portfolio"
-git remote add origin https://github.com/Noimpty-Q/粒子交互.git
+git remote add origin https://github.com/Noimpty-Q/particle-interaction.git
 git push -u origin main
 ```
 
 3. 仓库页 **Settings → Pages**，Source 选 `Deploy from a branch`，Branch 选 `main` / `(root)`，保存
-4. 等 1–2 分钟，访问 `https://Noimpty-Q.github.io/粒子交互/`
+4. 等 1–2 分钟，访问 `https://Noimpty-Q.github.io/particle-interaction/`
 
 `.nojekyll` 已包含在仓库中，用于跳过 GitHub Pages 的 Jekyll 处理流程
 （避免以下划线开头的文件被忽略）。
